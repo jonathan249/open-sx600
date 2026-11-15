@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { groupRides, maxOf, timeInZones, weeklyTotals, weekStart } from "./history";
+import { avgHeartRate, groupRides, maxOf, timeInZones, weeklyTotals, weekStart } from "./history";
 
 // Local-time dates so the tests hold in any timezone.
 const at = (y: number, m: number, d: number, h = 12) => new Date(y, m - 1, d, h).getTime();
@@ -53,5 +53,16 @@ describe("ride analysis", () => {
     expect(maxOf(samples, "p")).toBe(250);
     expect(maxOf(samples, "hr")).toBe(180);
     expect(maxOf([], "c")).toBeUndefined();
+  });
+});
+
+describe("avgHeartRate", () => {
+  const r = (durationS: number, avgHeartRate?: number) => ({ durationS, stats: { avgHeartRate } as never });
+  test("weights by duration and ignores rides without heart rate", () => {
+    expect(avgHeartRate([r(3600, 120), r(600, 180), r(1800, 0), r(1800)])).toBeCloseTo((3600 * 120 + 600 * 180) / 4200);
+  });
+  test("is undefined without heart rate", () => {
+    expect(avgHeartRate([r(1800, 0)])).toBeUndefined();
+    expect(avgHeartRate([])).toBeUndefined();
   });
 });

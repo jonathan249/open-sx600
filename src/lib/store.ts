@@ -185,7 +185,10 @@ export function isValidRide(r: unknown): r is Ride {
   );
 }
 
-/** Merges a backup into local data (same ids are overwritten), all or nothing. Returns counts. */
+/**
+ * Merges a backup into local data, all or nothing. Same ids are overwritten, except that a newer
+ * local workout and a finished local ride are kept. Returns what was written and what was skipped.
+ */
 export async function importBackup(file: File) {
   let data: Partial<Backup>;
   try {
@@ -205,13 +208,37 @@ export async function importBackup(file: File) {
   const { workouts, rides } = data;
 
   const db = await openDb();
+  const counts = { workouts: 0, rides: 0, skipped: 0 };
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(["workouts", "rides"], "readwrite");
       const ws = tx.objectStore("workouts");
       const rs = tx.objectStore("rides");
-      for (const w of workouts) ws.put(w);
-      for (const r of rides) rs.put(r);
+      // Compare against local copies inside the same transaction, so nothing can change in between.
+      const localW = ws.getAll() as IDBRequest<Workout[]>;
+      const localR = rs.getAll() as IDBRequest<Ride[]>;
+      localR.onsuccess = () => {
+        const wById = new Map(localW.result.map((w) => [w.id, w]));
+        const rById = new Map(localR.result.map((r) => [r.id, r]));
+        for (const w of workouts) {
+          const local = wById.get(w.id);
+          // An older backup must not undo edits made here since it was exported.
+          if (local && (w.updatedAt || 0) < (local.updatedAt || 0)) counts.skipped++;
+          else {
+            ws.put(w);
+            counts.workouts++;
+          }
+        }
+        for (const r of rides) {
+          const local = rById.get(r.id);
+          // A crash checkpoint must not replace the finished ride it became.
+          if (r.partial && local && !local.partial) counts.skipped++;
+          else {
+            rs.put(r);
+            counts.rides++;
+          }
+        }
+      };
       tx.oncomplete = () => resolve();
       tx.onabort = tx.onerror = () => reject(tx.error ?? new Error("Import was aborted; nothing was imported."));
     });
@@ -219,5 +246,5 @@ export async function importBackup(file: File) {
     notify("workouts");
     notify("rides");
   }
-  return { workouts: workouts.length, rides: rides.length };
+  return counts;
 }

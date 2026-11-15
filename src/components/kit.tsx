@@ -1,6 +1,6 @@
 "use client";
 
-import { type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode, useEffect, useRef, useState } from "react";
+import { type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export const num = (v: number | undefined, digits = 0) => (v == null || Number.isNaN(v) ? "—" : v.toFixed(digits));
@@ -39,7 +39,10 @@ export function Readout({ label, unit, value }: { label: string; unit: string; v
     <div className="flex min-w-0 flex-col justify-between gap-4 rounded-xl bg-card p-4 sm:gap-6 sm:p-5">
       <Label className="text-foreground/80">{label}</Label>
       <div className="flex flex-wrap items-baseline gap-x-1.5">
-        <span className="text-3xl tabular-nums tracking-tight sm:text-5xl">{value}</span>
+        {/* No reading yet: a muted dash, so the placeholder doesn't look like data. */}
+        <span className={cn("text-3xl tabular-nums tracking-tight sm:text-5xl", value === "—" && "text-muted-foreground/50")}>
+          {value}
+        </span>
         <span className="type-label text-muted-foreground">{unit}</span>
       </div>
     </div>
@@ -173,17 +176,15 @@ export function NumberField({
   placeholder?: string;
   "aria-label": string;
 }) {
-  const [text, setText] = useState(value == null ? "" : String(value));
-  const focused = useRef(false);
-  // Follow external changes (e.g. reordering) while not being edited.
-  useEffect(() => {
-    if (!focused.current) setText(value == null ? "" : String(value));
-  }, [value]);
+  // Draft text only while editing; otherwise show the parent's value, so a commit the parent
+  // normalises back to the current value (no prop change) still replaces the typed text.
+  const [text, setText] = useState<string | null>(null);
 
   const commit = () => {
+    if (text == null) return;
     const n = text.trim() === "" ? null : Number(text);
     const next = parse(n === null || Number.isNaN(n) ? null : n);
-    setText(next == null ? "" : String(next));
+    setText(null);
     if (next !== value) onCommit(next);
   };
 
@@ -193,13 +194,9 @@ export function NumberField({
       type="number"
       inputMode="decimal"
       className={cn(inputClass, className)}
-      value={text}
-      onFocus={() => (focused.current = true)}
+      value={text ?? (value == null ? "" : String(value))}
       onChange={(e) => setText(e.target.value)}
-      onBlur={() => {
-        focused.current = false;
-        commit();
-      }}
+      onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
       }}

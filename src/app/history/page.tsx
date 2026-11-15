@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { useBikeState } from "@/components/bike-provider";
 import { Btn, ConfirmBtn, Label, num, Section, StatGrid } from "@/components/kit";
 import { Trace } from "@/components/trace";
-import { groupRides, maxOf, timeInZones, type WeekTotal, weeklyTotals } from "@/lib/history";
+import { avgHeartRate, groupRides, maxOf, timeInZones, type WeekTotal, weeklyTotals } from "@/lib/history";
 import { downsample } from "@/lib/ride";
 import { useNow } from "@/hooks/use-now";
 import { useSettings } from "@/lib/settings";
@@ -70,8 +70,7 @@ function Overview({ rides }: { rides: Ride[] }) {
   const thisWeek = weeks.at(-1)!;
   const lastWeek = weeks.at(-2);
   const weekRides = rides.filter((r) => r.startedAt >= thisWeek.start);
-  const hr = weekRides.filter((r) => r.stats.avgHeartRate);
-  const avgHr = hr.length ? hr.reduce((s, r) => s + r.stats.avgHeartRate, 0) / hr.length : undefined;
+  const avgHr = avgHeartRate(weekRides);
   const delta = lastWeek ? thisWeek.seconds - lastWeek.seconds : 0;
 
   return (
@@ -279,8 +278,8 @@ function Backup() {
           e.target.value = "";
           if (!file) return;
           try {
-            const { workouts, rides } = await importBackup(file);
-            setMessage(`Imported ${rides} rides · ${workouts} workouts`);
+            const { workouts, rides, skipped } = await importBackup(file);
+            setMessage(`Imported ${rides} rides · ${workouts} workouts${skipped ? ` · skipped ${skipped} (local copy is newer)` : ""}`);
           } catch (err) {
             setMessage((err as Error).message);
           }

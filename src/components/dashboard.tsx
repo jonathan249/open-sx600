@@ -32,11 +32,16 @@ function LiveOutput() {
   const hrFromSensor = useBikeState().hr.status === "connected";
   const { zones } = useSettings().hr;
   const zone = live.heartRate ? `Z${hrZone(live.heartRate, zones)}` : undefined;
+  const power = num(live.powerW);
   return (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.2fr_1fr] lg:items-end">
       <div>
         <div className="flex items-baseline gap-4">
-          <span className="type-hero font-light tabular-nums tracking-tighter sm:type-hero-lg">{num(live.powerW)}</span>
+          <span className="type-hero font-light tabular-nums tracking-tighter sm:type-hero-lg">
+            {/* An em dash is 1em wide, so at hero size it became a solid bar. Keep the line height,
+                show a small muted dash like the tiles beside it. */}
+            {power === "—" ? <span className="text-5xl text-muted-foreground/50">—</span> : power}
+          </span>
           <span className="text-lg text-muted-foreground">W</span>
         </div>
         <Label className="mt-3">Instantaneous power · console estimate</Label>

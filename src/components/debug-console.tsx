@@ -38,14 +38,20 @@ function useRates(entries: readonly DebugEntry[]) {
   }, [entries]);
 }
 
+/** Button label after a copy: "Copied", or "Copy failed" (no permission, insecure context, unfocused tab). */
 function useCopyReport() {
-  const [copied, setCopied] = useState(false);
+  const [result, setResult] = useState<"Copied" | "Copy failed">();
   const copy = async () => {
-    await navigator.clipboard.writeText(debugLog.report());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(debugLog.report());
+      setResult("Copied");
+    } catch (err) {
+      console.error("[debug] could not copy report", err);
+      setResult("Copy failed");
+    }
+    setTimeout(() => setResult(undefined), 2000);
   };
-  return [copied, copy] as const;
+  return [result, copy] as const;
 }
 
 const PANE_ROWS = 60;
@@ -54,7 +60,7 @@ const PANE_ROWS = 60;
 export function DiagnosticsPane() {
   const entries = useDebugEntries();
   const rates = useRates(entries);
-  const [copied, copy] = useCopyReport();
+  const [copyResult, copy] = useCopyReport();
   const [errorsOnly, setErrorsOnly] = useState(false);
   const errors = entries.filter((e) => e.kind === "error").length;
 
@@ -78,7 +84,7 @@ export function DiagnosticsPane() {
       </div>
       <div className="flex flex-wrap gap-2 py-3">
         <Btn variant="solid" className="px-3" onClick={copy}>
-          {copied ? "Copied" : "Copy report"}
+          {copyResult ?? "Copy report"}
         </Btn>
         <Btn variant={errorsOnly ? "solid" : "outline"} className="px-3" onClick={() => setErrorsOnly(!errorsOnly)}>
           Errors only
@@ -120,7 +126,7 @@ export function DebugConsole() {
   const [frozen, setFrozen] = useState<readonly DebugEntry[] | null>(null);
   const [kind, setKind] = useState<(typeof KIND_FILTERS)[number]>("all");
   const [source, setSource] = useState<(typeof SOURCE_FILTERS)[number]>("all");
-  const [copied, copyReport] = useCopyReport();
+  const [copyResult, copyReport] = useCopyReport();
   const entries = frozen ?? live;
 
   const rows = useMemo(() => {
@@ -156,7 +162,7 @@ export function DebugConsole() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Btn variant="solid" onClick={copyReport}>
-            {copied ? "Copied" : "Copy report"}
+            {copyResult ?? "Copy report"}
           </Btn>
           <Btn onClick={download}>Download JSON</Btn>
           <Btn onClick={() => setFrozen(frozen ? null : live)}>{frozen ? "Resume" : "Freeze"}</Btn>

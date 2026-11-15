@@ -36,6 +36,21 @@ export function weeklyTotals(rides: Pick<Ride, "startedAt" | "durationS" | "stat
   return out;
 }
 
+/**
+ * Duration-weighted average heart rate, so a 5-minute spin doesn't count as much as an hour.
+ * Rides without heart rate are left out entirely. Undefined when none has any.
+ */
+export function avgHeartRate(rides: Pick<Ride, "durationS" | "stats">[]): number | undefined {
+  let sum = 0;
+  let seconds = 0;
+  for (const r of rides) {
+    if (!r.stats.avgHeartRate || !(r.durationS > 0)) continue;
+    sum += r.stats.avgHeartRate * r.durationS;
+    seconds += r.durationS;
+  }
+  return seconds ? sum / seconds : undefined;
+}
+
 /** Groups rides (newest first) under "This week", "Last week", then month names. */
 export function groupRides<T extends Pick<Ride, "startedAt">>(rides: T[], now: number): { label: string; rides: T[] }[] {
   const thisWeek = weekStart(now);
