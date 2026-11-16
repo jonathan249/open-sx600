@@ -103,5 +103,7 @@ in the source comments.
 
 ## Licence
 
-The protocol code is derived from QZ, which is GPL-3.0, so this project should be treated as
-GPL-3.0 too.
+GPL-3.0-only. See [LICENSE](LICENSE).
+
+The Bluetooth protocol code is derived from [QZ / qdomyos-zwift](https://github.com/cagnulein/qdomyos-zwift),
+which is licensed under GPL-3.0, so this project is released under the same licence.
