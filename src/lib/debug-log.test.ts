@@ -11,6 +11,18 @@ describe("debug log", () => {
     expect(isStreamEntry({ kind: "info" })).toBe(false);
   });
 
+  test("an explicit stream flag overrides the channel guess", () => {
+    debugLog.clear();
+    debugLog.add({ source: "bike", kind: "tx", channel: "FFF2 FitShow Write", text: "poll", stream: true });
+    debugLog.add({ source: "bike", kind: "rx", channel: "FFF1 FitShow Notify", text: "reply", stream: false });
+    const json = JSON.parse(debugLog.json()) as { entries: { text: string; stream?: boolean }[] };
+    expect(json.entries.map((e) => [e.text, !!e.stream])).toEqual([
+      ["poll", true],
+      ["reply", false],
+    ]);
+    debugLog.clear();
+  });
+
   test("a long data stream doesn't push control events out, and order is kept", () => {
     debugLog.clear();
     debugLog.add({ source: "bike", kind: "tx", channel: "2AD9 FTMS Control Point", text: "setTargetResistance" });

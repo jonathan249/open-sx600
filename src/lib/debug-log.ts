@@ -99,9 +99,10 @@ class DebugLog {
   /** Free-form facts about the connected devices (GATT layout, firmware, …) for the report. */
   facts: Record<string, unknown> = {};
 
-  add(e: Omit<DebugEntry, "id" | "t" | "stream">) {
-    const stream = isStreamEntry(e);
-    const entry: DebugEntry = { ...e, id: this.nextId++, t: Date.now(), ...(stream && { stream }) };
+  /** `stream` overrides the channel-based guess (e.g. FitShow keep-alive polls are writes but still noise). */
+  add(e: Omit<DebugEntry, "id" | "t">) {
+    const stream = e.stream ?? isStreamEntry(e);
+    const entry: DebugEntry = { ...e, id: this.nextId++, t: Date.now(), stream: stream || undefined };
     const buf = stream ? this.stream : this.events;
     const max = stream ? MAX_STREAM : MAX_EVENTS;
     buf.push(entry);

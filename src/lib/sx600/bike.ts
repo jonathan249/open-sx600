@@ -54,13 +54,14 @@ const fields = (d: object) =>
     .map(([k, v]) => `${k}=${typeof v === "number" ? +v.toFixed(2) : v}`)
     .join(" ") || "(no fields)";
 
-function log(kind: "rx" | "tx" | "info" | "error", text: string, channel?: number, data?: DataView | Uint8Array) {
+function log(kind: "rx" | "tx" | "info" | "error", text: string, channel?: number, data?: DataView | Uint8Array, stream?: boolean) {
   debugLog.add({
     source: "bike",
     kind,
     text,
     channel: channel == null ? undefined : channelName(channel),
     hex: data ? toHex(data) : undefined,
+    stream,
   });
 }
 
@@ -280,7 +281,9 @@ export class Sx600 {
     log("info", `FitShow: writing ${withoutResponse ? "without" : "with"} response`);
     this.queue = new WriteQueue(
       async (bytes) => {
-        log("tx", "frame", FITSHOW_WRITE, bytes);
+        // Keep-alive polls go out 5×/s: log them as data-stream noise, not as control events.
+        const isPoll = POLL_FRAMES.includes(bytes);
+        log("tx", isPoll ? "poll" : "frame", FITSHOW_WRITE, bytes, isPoll);
         if (withoutResponse) await write.writeValueWithoutResponse(bytes as BufferSource);
         else await write.writeValueWithResponse(bytes as BufferSource);
       },
@@ -293,7 +296,9 @@ export class Sx600 {
     notify.oncharacteristicvaluechanged = (e) => {
       const view = (e.target as BluetoothRemoteGATTCharacteristic).value!;
       const parsed = parseFitshowData(view);
-      log("rx", parsed ? fields(parsed) : "unparsed", FITSHOW_NOTIFY, view);
+      // Command replies (0x44 group: init, resistance) are control events; the rest is the data stream.
+      const isCommandReply = view.byteLength > 1 && view.getUint8(1) === 0x44;
+      log("rx", parsed ? fields(parsed) : "unparsed", FITSHOW_NOTIFY, view, !isCommandReply);
       if (this.hasFtmsData) return;
       if (parsed) this.emit({ resistance: parsed.resistance, cadenceRpm: parsed.cadence, powerW: parsed.power });
     };

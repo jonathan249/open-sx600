@@ -233,7 +233,14 @@ export function DebugConsole() {
           </Btn>
           <Btn onClick={download}>Download JSON</Btn>
           <Btn onClick={view.toggleFreeze}>{view.held ? "Resume" : "Freeze"}</Btn>
-          <ConfirmBtn onConfirm={() => debugLog.clear()}>Clear</ConfirmBtn>
+          <ConfirmBtn
+            onConfirm={() => {
+              debugLog.clear();
+              view.jumpToLatest(); // a paused view would keep showing the cleared events
+            }}
+          >
+            Clear
+          </ConfirmBtn>
         </div>
       </div>
 
