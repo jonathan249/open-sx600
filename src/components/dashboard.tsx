@@ -451,6 +451,10 @@ export function Dashboard() {
             <Label className="mb-2">Cadence · rpm</Label>
             <Trace data={history} dataKey="cadenceRpm" label="Cadence" color="var(--success)" x="t" formatX={clock} />
           </div>
+          <div className="md:col-span-2">
+            <Label className="mb-2">Heart rate · bpm</Label>
+            <Trace data={history} dataKey="heartRate" label="Heart rate" color="var(--destructive)" x="t" formatX={clock} />
+          </div>
         </div>
       </Section>
       </div>
