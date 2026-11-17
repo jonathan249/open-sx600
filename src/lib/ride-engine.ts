@@ -7,6 +7,7 @@
  * Timing uses wall-clock time, not timer ticks, and work is driven by incoming Bluetooth
  * data, so a throttled background tab doesn't distort the ride.
  */
+import { GOAL_CHECK_S, type GoalDecision, updateIntensity } from "./algorithms/maintain-goal";
 import { debugLog, describeError } from "./debug-log";
 import { getSettings } from "./settings";
 import { type HeartRateReading, HeartRateSensor, type HrLinkState } from "./heart-rate";
@@ -34,6 +35,15 @@ export type Session = {
   stepIndex: number; // -1 when free riding or the workout has finished
   stepRemainingS: number; // time left, or left until the cap for an HR step
   finished: boolean;
+  /** Heart-rate goal control for the current step; absent when the step has no goal. */
+  goal?: GoalState;
+};
+
+export type GoalState = {
+  stepKey: string; // the played step this belongs to
+  checkS: number; // ride elapsed seconds of the last check (or the step start)
+  prevHr?: number; // average HR of the previous window, for the trend
+  last?: GoalDecision & { atS: number; hr?: number };
 };
 
 export type HrState = { status: Status; name?: string; error?: string };
@@ -371,6 +381,7 @@ export class RideEngine {
         if (next) this.setResistance(next.resistance, `workout step: "${next.label}"`);
       }
     }
+    const goal = this.runGoal(s, planState, elapsedS, running);
     if (s.plan.length && !finished) {
       const step = s.plan[planState.index];
       if (!step) {
@@ -387,13 +398,14 @@ export class RideEngine {
     const changed =
       s !== this.state.session ||
       planState !== s.planState ||
+      goal !== s.goal ||
       elapsedS !== s.elapsedS ||
       stepIndex !== s.stepIndex ||
       stepRemainingS !== s.stepRemainingS ||
       finished !== s.finished;
     if (changed) {
       this.setState({
-        session: { ...s, elapsedS, planState, stepIndex, stepRemainingS, finished },
+        session: { ...s, elapsedS, planState, stepIndex, stepRemainingS, finished, goal },
         stats: {
           elapsedS,
           avgPower: acc.n ? acc.power / acc.n : 0,
@@ -408,6 +420,41 @@ export class RideEngine {
       this.lastCheckpointAt = now;
       void store.put("rides", this.buildRide(this.state.session!, true), { silent: true }).catch(() => {});
     }
+  }
+
+  /**
+   * Heart-rate goal: every GOAL_CHECK_S of riding in a step with a goal band, average the
+   * window's heart rate and cadence and let the algorithm hold, raise or lower resistance.
+   * Returns the same object when nothing changed.
+   */
+  private runGoal(s: Session, planState: PlanState, elapsedS: number, running: boolean): GoalState | undefined {
+    const step = s.finished ? undefined : s.plan[planState.index];
+    if (!step?.hrGoal) return undefined;
+    let goal = s.goal?.stepKey === step.key ? s.goal : { stepKey: step.key, checkS: planState.startS };
+    if (!running || elapsedS - goal.checkS < GOAL_CHECK_S) return goal;
+
+    let hrSum = 0, hrN = 0, rpmSum = 0, n = 0;
+    for (let i = this.samples.length - 1; i >= 0 && this.samples[i].t > goal.checkS; i--) {
+      const x = this.samples[i];
+      n++;
+      rpmSum += x.c ?? 0;
+      if (x.hr) {
+        hrSum += x.hr;
+        hrN++;
+      }
+    }
+    const hr = hrN ? Math.round(hrSum / hrN) : undefined;
+    const rpm = n ? rpmSum / n : 0;
+    const current = this.state.targetResistance;
+    const d = updateIntensity({ hr, prevHr: goal.prevHr, rpm, intensity: current, goal: step.hrGoal });
+    if (d.intensity !== current) this.setResistance(d.intensity);
+    debugLog.add({
+      source: "app",
+      kind: "info",
+      text: `HR goal ${step.hrGoal.low}–${step.hrGoal.high}: avg HR ${hr ?? "—"}, ${Math.round(rpm)} rpm → ${d.action} (${d.reason}), level ${current}→${d.intensity}`,
+    });
+    goal = { stepKey: step.key, checkS: elapsedS, prevHr: hr, last: { ...d, atS: elapsedS, hr } };
+    return goal;
   }
 
   // --- keep the page alive while riding -------------------------------------
