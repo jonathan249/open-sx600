@@ -1,4 +1,7 @@
+import type { HrGoal } from "./algorithms/maintain-goal";
 import { clampResistance } from "./sx600/fitshow";
+
+export type { HrGoal };
 
 /**
  * How a step ends. "time" runs for durationS. "hr" ends once heart rate has risen to
@@ -15,6 +18,8 @@ export type WorkoutStep = {
   resistance: number; // 1–32, applied when the step starts
   cadence?: number; // optional target rpm, shown as a cue only
   end?: StepEnd; // absent means time-based
+  /** Keep heart rate in this band: resistance starts at `resistance` and is adjusted every minute. */
+  hrGoal?: HrGoal;
 };
 
 /** Plays the `steps` step rows above it again, so they run `times` times in total. */
@@ -49,6 +54,14 @@ export function repeatSpan(rows: WorkoutItem[], index: number) {
 
 export const isRepeat = (item: WorkoutItem): item is RepeatItem => item.kind === "repeat";
 export const isHrStep = (s: WorkoutStep) => s.end?.kind === "hr";
+export const hasHrGoal = (s: WorkoutStep) => s.hrGoal != null;
+
+/** A sane goal band: whole bpm within 60–220, low below high. */
+export function normalizeHrGoal(g: HrGoal): HrGoal {
+  const high = Math.min(220, Math.max(65, Math.round(g.high)));
+  const low = Math.min(high - 5, Math.max(60, Math.round(g.low)));
+  return { low, high };
+}
 
 export const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -149,6 +162,10 @@ export function planProgressS(plan: PlanStep[], state: PlanState, elapsedS: numb
   return step ? s + Math.min(step.durationS, Math.max(0, elapsedS - state.startS)) : s;
 }
 
+export function describeGoal(step: WorkoutStep) {
+  return step.hrGoal ? `hold HR ${step.hrGoal.low}–${step.hrGoal.high}` : "";
+}
+
 export function describeEnd(step: WorkoutStep) {
   if (step.end?.kind !== "hr") return fmtDuration(step.durationS);
   return `until HR ${step.end.dir === "above" ? "≥" : "≤"} ${step.end.bpm} · max ${fmtDuration(step.durationS)}`;
@@ -163,6 +180,7 @@ export function makeStep(partial: Partial<WorkoutStep> = {}): WorkoutStep {
     resistance: clampResistance(partial.resistance ?? 8),
     cadence: partial.cadence,
     end: partial.end,
+    hrGoal: partial.hrGoal && normalizeHrGoal(partial.hrGoal),
   };
 }
 

@@ -10,11 +10,13 @@ import { Trace } from "@/components/trace";
 import { Slider } from "@/components/ui/slider";
 import { WorkoutProfile } from "@/components/workout-profile";
 import { hrZone, useSettings } from "@/lib/settings";
+import type { GoalState } from "@/lib/ride-engine";
 import { useCollection } from "@/lib/store";
 import { MAX_RESISTANCE, MIN_RESISTANCE } from "@/lib/sx600/fitshow";
 import { cn } from "@/lib/utils";
 import {
   describeEnd,
+  describeGoal,
   expandPlan,
   fmtDuration,
   hasHrSteps,
@@ -86,6 +88,29 @@ function HrTarget({ step }: { step: PlanStep }) {
     <span className={cn("tabular-nums", met ? "text-success" : "text-muted-foreground")}>
       {dir === "above" ? "Ride until" : "Recover until"} HR {dir === "above" ? "≥" : "≤"} {bpm} · now {hr ?? "—"}
       {hr == null && " (no HR signal)"}
+    </span>
+  );
+}
+
+/** Live heart rate against the step's goal band, plus what the last check did. */
+function HrGoalStatus({ step, goal }: { step: PlanStep; goal?: GoalState }) {
+  const live = useLive();
+  if (!step.hrGoal) return null;
+  const { low, high } = step.hrGoal;
+  const hr = live.heartRate;
+  const inBand = hr != null && hr >= low && hr <= high;
+  const last = goal?.last;
+  return (
+    <span className={cn("tabular-nums", inBand ? "text-success" : "text-muted-foreground")}>
+      Hold HR {low}–{high} · now {hr ?? "—"}
+      {hr == null && " (no HR signal)"}
+      {last && (
+        <span className="text-muted-foreground">
+          {" "}
+          · {last.action === "hold" ? "kept level" : last.action === "increase" ? "raised to" : "lowered to"}
+          {last.action !== "hold" && ` ${last.intensity}`} ({last.reason})
+        </span>
+      )}
     </span>
   );
 }
@@ -250,10 +275,16 @@ function RideControl() {
                   <HrTarget step={step} />
                 </div>
               )}
+              {step?.hrGoal && (
+                <div className="mt-1 text-sm">
+                  <HrGoalStatus step={step} goal={session.goal} />
+                </div>
+              )}
               {next && (
                 <Label className="mt-1">
                   Next · {next.label}
                   {roundText(next)} · level {next.resistance} · {describeEnd(next)}
+                  {next.hrGoal ? ` · ${describeGoal(next)}` : ""}
                 </Label>
               )}
             </div>
@@ -338,6 +369,7 @@ function ResistanceControl() {
   const { status, targetResistance, session } = useBikeState();
   const connected = status === "connected";
   const byWorkout = !!session?.workout && !session.finished;
+  const byGoal = byWorkout && !!session?.goal;
   const { quickLevels } = useSettings();
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -390,7 +422,7 @@ function ResistanceControl() {
 
       <div className="mt-auto flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-2">
-          <Label>{byWorkout ? "Set by workout · changes at the next step" : "Quick levels"}</Label>
+          <Label>{byGoal ? "Adjusted every minute to hold the HR goal" : byWorkout ? "Set by workout · changes at the next step" : "Quick levels"}</Label>
           <Link href="/settings" className="type-label text-muted-foreground hover:text-spot">
             Edit
           </Link>

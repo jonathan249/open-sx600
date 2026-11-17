@@ -1,6 +1,6 @@
 import { MAX_RESISTANCE } from "@/lib/sx600/fitshow";
 import { cn } from "@/lib/utils";
-import { describeEnd, expandPlan, isHrStep, type WorkoutItem } from "@/lib/workouts";
+import { describeEnd, describeGoal, expandPlan, isHrStep, type WorkoutItem } from "@/lib/workouts";
 
 /** Diagonal stripes over the bar colour mark steps that end on heart rate. */
 const HR_STRIPES = {
@@ -39,7 +39,7 @@ export function WorkoutProfile({
       {plan.map((s, i) => (
         <div
           key={s.key}
-          title={`${s.label}${s.round ? ` ${s.round.n}/${s.round.of}` : ""} · ${describeEnd(s)} · level ${s.resistance}`}
+          title={`${s.label}${s.round ? ` ${s.round.n}/${s.round.of}` : ""} · ${describeEnd(s)} · level ${s.resistance}${s.hrGoal ? ` · ${describeGoal(s)}` : ""}`}
           style={{
             flexGrow: s.durationS,
             flexBasis: 0,

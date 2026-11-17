@@ -36,6 +36,7 @@ import {
   makeRepeat,
   makeStep,
   MIN_STEP_S,
+  normalizeHrGoal,
   parseDurationText,
   type RepeatItem,
   repeatSpan,
@@ -234,7 +235,46 @@ function StepRow({
             onCommit={(d) => onChange({ durationS: d })}
           />
         </Cell>
-        <Cell label="Level" unit={`/ ${MAX_RESISTANCE}`} className="sm:w-24">
+        <Cell label="Resistance" className="col-span-2 sm:w-44">
+          <select
+            aria-label="How resistance is set"
+            className={cn(inputClass, CELL_INPUT, "-ml-0.5 cursor-pointer")}
+            value={step.hrGoal ? "goal" : "fixed"}
+            onChange={(e) =>
+              onChange({ hrGoal: e.target.value === "goal" ? (step.hrGoal ?? { low: 130, high: 140 }) : undefined })
+            }
+          >
+            <option value="fixed">Fixed level</option>
+            <option value="goal">Hold heart rate</option>
+          </select>
+        </Cell>
+        {step.hrGoal && (
+          <>
+            <Cell label="HR from" unit="bpm" className="sm:w-24">
+              <NumberField
+                aria-label="Goal heart rate, lower bound in bpm"
+                className={CELL_INPUT}
+                min={60}
+                max={215}
+                value={step.hrGoal.low}
+                parse={parseBpm}
+                onCommit={(low) => step.hrGoal && onChange({ hrGoal: normalizeHrGoal({ ...step.hrGoal, low: low ?? step.hrGoal.low }) })}
+              />
+            </Cell>
+            <Cell label="HR to" unit="bpm" className="sm:w-24">
+              <NumberField
+                aria-label="Goal heart rate, upper bound in bpm"
+                className={CELL_INPUT}
+                min={65}
+                max={220}
+                value={step.hrGoal.high}
+                parse={parseBpm}
+                onCommit={(high) => step.hrGoal && onChange({ hrGoal: normalizeHrGoal({ ...step.hrGoal, high: high ?? step.hrGoal.high }) })}
+              />
+            </Cell>
+          </>
+        )}
+        <Cell label={step.hrGoal ? "Start level" : "Level"} unit={`/ ${MAX_RESISTANCE}`} className="sm:w-24">
           <NumberField
             aria-label="Resistance level"
             className={CELL_INPUT}
