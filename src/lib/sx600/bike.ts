@@ -25,6 +25,8 @@ import {
   CONTROL_POINT,
   commands,
   type ControlResponse,
+  describeMachineStatus,
+  MACHINE_STATUS,
   OP,
   parseControlResponse,
   parseResistanceRange,
@@ -115,7 +117,10 @@ export class Sx600 {
   }
 
   setResistance(level: number) {
-    if (!this.queue) return Promise.resolve();
+    if (!this.queue) {
+      log("error", `resistance ${level} not sent: bike not ready`);
+      return Promise.resolve();
+    }
     return this.queue.setResistance(
       this.mode === "ftms" ? setResistanceCommand(level, this.scale) : resistanceFrame(level),
     );
@@ -178,6 +183,16 @@ export class Sx600 {
         };
         await bikeData.startNotifications();
         this.hasFtmsData = true;
+      }
+
+      // Machine Status tells us when the bike actually applied a target (or lost control).
+      const status = await ftms.getCharacteristic(MACHINE_STATUS).catch(() => null);
+      if (status) {
+        status.oncharacteristicvaluechanged = (e) => {
+          const view = (e.target as BluetoothRemoteGATTCharacteristic).value!;
+          log("rx", describeMachineStatus(view, this.scale), MACHINE_STATUS, view);
+        };
+        await status.startNotifications().catch((err) => log("error", `status notifications failed: ${describeError(err)}`, MACHINE_STATUS));
       }
     }
 

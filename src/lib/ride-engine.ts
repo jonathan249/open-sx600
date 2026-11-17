@@ -189,7 +189,10 @@ export class RideEngine {
       // After a reconnect, resume the console session and re-apply the resistance we want.
       const s = this.state.session;
       if (s && !s.manualPaused) void this.bike?.start();
-      if (this.resistanceKnown) void this.bike?.setResistance(this.state.targetResistance);
+      if (this.resistanceKnown) {
+        debugLog.add({ source: "app", kind: "info", text: `resistance target ${this.state.targetResistance} (re-applied after reconnect)` });
+        void this.bike?.setResistance(this.state.targetResistance);
+      }
       return;
     }
     // Stale readings must not keep a ride "pedalling" while the link is down.
@@ -211,8 +214,14 @@ export class RideEngine {
   };
 
   // --- resistance -----------------------------------------------------------
-  setResistance(level: number) {
+  setResistance(level: number, why = "manual") {
     const l = clampResistance(level);
+    const bike = this.live.resistance;
+    debugLog.add({
+      source: "app",
+      kind: "info",
+      text: `resistance target ${l} (${why})${bike == null ? "" : `, bike reports ${+bike.toFixed(1)}`}${this.bike ? "" : ", no bike connected"}`,
+    });
     this.resistanceKnown = true;
     if (l !== this.state.targetResistance) this.setState({ targetResistance: l });
     void this.bike?.setResistance(l);
@@ -230,7 +239,7 @@ export class RideEngine {
     void this.bike?.start();
     const plan = workout ? expandPlan(workout) : [];
     const first = plan[0];
-    if (first) this.setResistance(first.resistance);
+    if (first) this.setResistance(first.resistance, `workout start: "${first.label}"`);
     this.setState({
       stats: emptyStats,
       session: {
@@ -359,7 +368,7 @@ export class RideEngine {
         const why = ended.reason === "hr" ? `HR target reached (${this.live.heartRate} bpm)` : ended.reason === "cap" ? "HR target not reached, max time" : "time";
         debugLog.add({ source: "app", kind: "info", text: `step "${ended.step.label}" ended: ${why} at ${elapsedS}s` });
         const next = s.plan[planState.index];
-        if (next) this.setResistance(next.resistance);
+        if (next) this.setResistance(next.resistance, `workout step: "${next.label}"`);
       }
     }
     if (s.plan.length && !finished) {
