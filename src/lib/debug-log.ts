@@ -19,9 +19,16 @@ export type DebugEntry = {
   hex?: string;
   /** Human-readable decoding or message. */
   text: string;
+  /** Periodic data packet (bike data, heart rate): the bulk of the log, rarely interesting. */
+  stream?: boolean;
 };
 
-const MAX_ENTRIES = 3000;
+/**
+ * Data packets and everything else (writes, control-point replies, status, errors) are kept in
+ * separate ring buffers, so a long ride's data stream can't push the rare control events out.
+ */
+const MAX_STREAM = 2000;
+const MAX_EVENTS = 2000;
 const NOTIFY_MS = 250;
 
 export const CHANNEL_NAMES: Record<number, string> = {
@@ -65,8 +72,26 @@ export function describeError(err: unknown) {
 
 type Listener = () => void;
 
+/** Incoming packets that just repeat readings. Control-point replies and status changes are not. */
+export function isStreamEntry(e: Pick<DebugEntry, "kind" | "channel">) {
+  return e.kind === "rx" && !!e.channel && !/^(2AD9|2ADA)\b/.test(e.channel);
+}
+
+/** Merges two id-sorted lists into one id-sorted list. */
+function mergeById(a: readonly DebugEntry[], b: readonly DebugEntry[]): DebugEntry[] {
+  const out: DebugEntry[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    if (j >= b.length || (i < a.length && a[i].id < b[j].id)) out.push(a[i++]);
+    else out.push(b[j++]);
+  }
+  return out;
+}
+
 class DebugLog {
-  private entries: DebugEntry[] = [];
+  private stream: DebugEntry[] = [];
+  private events: DebugEntry[] = [];
   private snapshot: readonly DebugEntry[] = [];
   private nextId = 1;
   private listeners = new Set<Listener>();
@@ -74,10 +99,19 @@ class DebugLog {
   /** Free-form facts about the connected devices (GATT layout, firmware, …) for the report. */
   facts: Record<string, unknown> = {};
 
+  /** `stream` overrides the channel-based guess (e.g. FitShow keep-alive polls are writes but still noise). */
   add(e: Omit<DebugEntry, "id" | "t">) {
-    this.entries.push({ ...e, id: this.nextId++, t: Date.now() });
-    if (this.entries.length > MAX_ENTRIES) this.entries.splice(0, this.entries.length - MAX_ENTRIES);
+    const stream = e.stream ?? isStreamEntry(e);
+    const entry: DebugEntry = { ...e, id: this.nextId++, t: Date.now(), stream: stream || undefined };
+    const buf = stream ? this.stream : this.events;
+    const max = stream ? MAX_STREAM : MAX_EVENTS;
+    buf.push(entry);
+    if (buf.length > max) buf.splice(0, buf.length - max);
     this.scheduleNotify();
+  }
+
+  private get entries() {
+    return mergeById(this.events, this.stream);
   }
 
   setFact(key: string, value: unknown) {
@@ -86,7 +120,8 @@ class DebugLog {
   }
 
   clear() {
-    this.entries = [];
+    this.stream = [];
+    this.events = [];
     this.flush();
   }
 
@@ -97,8 +132,11 @@ class DebugLog {
 
   getSnapshot = () => this.snapshot;
 
-  /** Plain-text report to paste into a bug report. */
-  report(limit = 400) {
+  /**
+   * Plain-text report to paste into a bug report: control events (writes, replies, status,
+   * errors) first, then only the most recent data packets for context.
+   */
+  report(eventLimit = 400, streamLimit = 40) {
     const lines = [
       `SX600 dashboard debug report · ${new Date().toISOString()}`,
       `User agent: ${typeof navigator !== "undefined" ? navigator.userAgent : "n/a"}`,
@@ -106,8 +144,11 @@ class DebugLog {
       "== Devices ==",
       JSON.stringify(this.facts, null, 2),
       "",
-      `== Last ${Math.min(limit, this.entries.length)} of ${this.entries.length} events ==`,
-      ...this.entries.slice(-limit).map(formatEntry),
+      `== Last ${Math.min(eventLimit, this.events.length)} of ${this.events.length} control events, info and errors ==`,
+      ...this.events.slice(-eventLimit).map(formatEntry),
+      "",
+      `== Last ${Math.min(streamLimit, this.stream.length)} of ${this.stream.length} data packets ==`,
+      ...this.stream.slice(-streamLimit).map(formatEntry),
     ];
     return lines.join("\n");
   }
@@ -132,7 +173,7 @@ class DebugLog {
   private flush() {
     clearTimeout(this.notifyTimer);
     this.notifyTimer = undefined;
-    this.snapshot = [...this.entries];
+    this.snapshot = this.entries;
     this.listeners.forEach((l) => l());
   }
 }

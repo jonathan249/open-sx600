@@ -10,6 +10,7 @@
  */
 
 export const CONTROL_POINT = 0x2ad9;
+export const MACHINE_STATUS = 0x2ada; // Fitness Machine Status
 export const RESISTANCE_RANGE = 0x2ad6; // Supported Resistance Level Range
 
 export const OP = {
@@ -81,3 +82,30 @@ export const commands = {
   pause: () => Uint8Array.from([OP.stopPause, PAUSE]),
   stop: () => Uint8Array.from([OP.stopPause, STOP]),
 };
+
+const STATUS_TEXT: Record<number, string> = {
+  0x01: "reset",
+  0x02: "stopped or paused by user",
+  0x03: "stopped by safety key",
+  0x04: "started or resumed by user",
+  0x05: "target speed changed",
+  0x06: "target incline changed",
+  0x07: "target resistance changed",
+  0x08: "target power changed",
+  0x12: "indoor bike simulation parameters changed",
+  0xff: "control permission lost",
+};
+
+/** Human-readable Fitness Machine Status notification, e.g. "target resistance changed → 8". */
+export function describeMachineStatus(view: DataView, resistanceScale: number): string {
+  if (view.byteLength < 1) return "empty";
+  const op = view.getUint8(0);
+  const text = STATUS_TEXT[op] ?? `status 0x${op.toString(16)}`;
+  // Target resistance is a UINT8 with 0.1 resolution per the spec; some bikes send whole levels.
+  if (op === 0x07 && view.byteLength >= 2) {
+    const raw = view.getUint8(1);
+    return `${text} → raw ${raw} (level ${+(raw / resistanceScale).toFixed(1)} at scale ×${resistanceScale})`;
+  }
+  if (op === 0x02 && view.byteLength >= 2) return `${text} (${view.getUint8(1) === 0x01 ? "stop" : "pause"})`;
+  return text;
+}
