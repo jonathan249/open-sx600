@@ -7,6 +7,8 @@ import {
   resistanceScale,
   setPowerCommand,
   setResistanceCommand,
+  simulationResistanceCommand,
+  simulationResistanceLevel,
 } from "./ftms-control";
 
 const dv = (bytes: number[]) => new DataView(Uint8Array.from(bytes).buffer);
@@ -22,6 +24,13 @@ describe("FTMS control point", () => {
   test("resistance command for whole-level and 0.1-resolution bikes", () => {
     expect(setResistanceCommand(8, 1)).toEqual(Uint8Array.from([0x04, 8]));
     expect(setResistanceCommand(32, 10)).toEqual(Uint8Array.from([0x04, 0x40, 0x01])); // 320
+  });
+
+  test("resistance via simulation parameters matches QZ for ZV- consoles", () => {
+    const f = simulationResistanceCommand(8);
+    expect(f).toEqual(Uint8Array.from([0x11, 0x00, 0x00, 80, 0x00, 0x28, 0x19]));
+    expect(simulationResistanceLevel(f)).toBe(8);
+    expect(simulationResistanceCommand(32)).toEqual(Uint8Array.from([0x11, 0x00, 0x00, 0x40, 0x01, 0x28, 0x19]));
   });
 
   test("power command is little-endian watts", () => {
