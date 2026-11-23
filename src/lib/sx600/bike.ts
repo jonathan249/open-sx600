@@ -35,6 +35,8 @@ import {
   RESULT_TEXT,
   resistanceScale,
   setResistanceCommand,
+  simulationResistanceCommand,
+  simulationResistanceLevel,
 } from "./ftms-control";
 import { WriteQueue } from "./write-queue";
 
@@ -73,6 +75,13 @@ export class Sx600 {
   private queue?: WriteQueue;
   private mode: ControlMode = "fitshow";
   private scale: 1 | 10 = 1;
+  /**
+   * How FTMS resistance is sent. "simulation" (op 0x11) is what QZ uses for ZV- consoles;
+   * we drop to "target" (op 0x04) if the bike rejects it.
+   */
+  private resistanceOp: "simulation" | "target" = "simulation";
+  /** Start/Resume sent on this link; QZ sends it before the first resistance change. */
+  private started = false;
   private hasFtmsData = false;
   private pollTimer?: ReturnType<typeof setInterval>;
   private pollIndex = 0;
@@ -122,14 +131,19 @@ export class Sx600 {
       log("error", `resistance ${level} not sent: bike not ready`);
       return Promise.resolve();
     }
+    if (this.mode !== "ftms") return this.queue.setResistance(resistanceFrame(level));
+    // FTMS consoles ignore targets until a session is started (QZ init(): 0x00 then 0x07).
+    if (!this.started) void this.start();
     return this.queue.setResistance(
-      this.mode === "ftms" ? setResistanceCommand(level, this.scale) : resistanceFrame(level),
+      this.resistanceOp === "simulation" ? simulationResistanceCommand(level) : setResistanceCommand(level, this.scale),
     );
   }
 
   /** Start/resume a session on the console (FTMS only; FitShow consoles start on the bike). */
   start() {
-    return this.mode === "ftms" ? (this.queue?.push(commands.start()) ?? Promise.resolve()) : Promise.resolve();
+    if (this.mode !== "ftms" || !this.queue) return Promise.resolve();
+    this.started = true;
+    return this.queue.push(commands.start());
   }
 
   pause() {
@@ -137,7 +151,9 @@ export class Sx600 {
   }
 
   stop() {
-    return this.mode === "ftms" ? (this.queue?.push(commands.stop()) ?? Promise.resolve()) : Promise.resolve();
+    if (this.mode !== "ftms" || !this.queue) return Promise.resolve();
+    this.started = false;
+    return this.queue.push(commands.stop());
   }
 
   disconnect() {
@@ -200,12 +216,13 @@ export class Sx600 {
     if (controlPoint) await this.setupFtmsControl(controlPoint);
     else await this.setupFitshow(server);
     log("info", `ready, control via ${this.mode}`);
-    debugLog.setFact("bikeControl", { mode: this.mode, scale: this.scale, ftmsData: this.hasFtmsData });
+    debugLog.setFact("bikeControl", { mode: this.mode, scale: this.scale, ftmsData: this.hasFtmsData, resistanceOp: this.resistanceOp });
     this.onLinkChange?.("connected");
   }
 
   private async setupFtmsControl(cp: BluetoothRemoteGATTCharacteristic) {
     this.mode = "ftms";
+    this.started = false;
     cp.oncharacteristicvaluechanged = (e) => {
       const view = (e.target as BluetoothRemoteGATTCharacteristic).value!;
       const res = parseControlResponse(view);
@@ -255,6 +272,17 @@ export class Sx600 {
         // Lost control (e.g. after the console was used directly): take it back once and retry.
         if (res?.result === RESULT.notPermitted && bytes[0] !== OP.requestControl) {
           await writeAndWait(commands.requestControl());
+          res = await writeAndWait(bytes);
+        }
+        // Bike doesn't take resistance via simulation parameters: use Set Target Resistance from now on.
+        if (
+          bytes[0] === OP.setIndoorBikeSimulation &&
+          (res?.result === RESULT.notSupported || res?.result === RESULT.invalidParameter)
+        ) {
+          this.resistanceOp = "target";
+          debugLog.setFact("bikeControl", { mode: this.mode, scale: this.scale, ftmsData: this.hasFtmsData, resistanceOp: this.resistanceOp });
+          log("info", "simulation parameters rejected, switching resistance to Set Target Resistance (0x04)", CONTROL_POINT);
+          bytes = setResistanceCommand(simulationResistanceLevel(bytes), this.scale);
           res = await writeAndWait(bytes);
         }
         if (!res) {

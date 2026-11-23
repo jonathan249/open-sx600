@@ -20,6 +20,7 @@ export const OP = {
   setTargetPower: 0x05,
   startResume: 0x07,
   stopPause: 0x08,
+  setIndoorBikeSimulation: 0x11,
 } as const;
 
 export const STOP = 0x01;
@@ -69,6 +70,21 @@ export function setResistanceCommand(level: number, scale: 1 | 10): Uint8Array {
   const raw = Math.round(level * scale);
   // uint8 fits whole levels; 0.1-resolution values above 255 need two bytes (as QZ does for such bikes).
   return scale === 1 ? Uint8Array.from([OP.setTargetResistance, raw & 0xff]) : Uint8Array.from([OP.setTargetResistance, raw & 0xff, (raw >> 8) & 0xff]);
+}
+
+/**
+ * Resistance the way QZ drives "ZV-" SX600 consoles (ftmsbike.cpp forceResistance(), default
+ * branch): Set Indoor Bike Simulation Parameters with the level ×10 in the grade field, wind 0,
+ * Crr 0x28 and Cw 0x19. These consoles don't act on Set Target Resistance (0x04).
+ */
+export function simulationResistanceCommand(level: number): Uint8Array {
+  const raw = Math.round(level * 10) & 0xffff;
+  return Uint8Array.from([OP.setIndoorBikeSimulation, 0x00, 0x00, raw & 0xff, raw >> 8, 0x28, 0x19]);
+}
+
+/** Level carried by a simulationResistanceCommand frame. */
+export function simulationResistanceLevel(bytes: Uint8Array): number {
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getInt16(3, true) / 10;
 }
 
 export function setPowerCommand(watts: number): Uint8Array {
